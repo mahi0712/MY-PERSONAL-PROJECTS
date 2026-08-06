@@ -29,7 +29,7 @@ import numpy as np
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 import faiss
-from anthropic import Anthropic
+from groq import Groq
 
 # ---------------------------------------------------------------------
 # CONFIG
@@ -40,26 +40,27 @@ DATA_DIR.mkdir(exist_ok=True)
 CHUNK_SIZE = 800        # characters per chunk
 CHUNK_OVERLAP = 150
 TOP_K = 4                # how many chunks to retrieve per question
-CLAUDE_MODEL = "claude-sonnet-5"
+GROQ_MODEL = "llama-3.3-70b-versatile"  # free-tier Groq model
 
 def get_api_key():
-    """Get the Anthropic API key from Streamlit secrets (when deployed on
+    """Get the Groq API key from Streamlit secrets (when deployed on
     Streamlit Cloud) or from an environment variable (when running locally)."""
     try:
-        return st.secrets["ANTHROPIC_API_KEY"]
+        return st.secrets["GROQ_API_KEY"]
     except (KeyError, FileNotFoundError):
-        return os.environ.get("ANTHROPIC_API_KEY")
+        return os.environ.get("GROQ_API_KEY")
 
 
 api_key = get_api_key()
 if not api_key:
     st.error(
-        "No Anthropic API key found. Set ANTHROPIC_API_KEY as an environment "
-        "variable locally, or add it under Settings -> Secrets on Streamlit Cloud."
+        "No Groq API key found. Set GROQ_API_KEY as an environment "
+        "variable locally, or add it under Settings -> Secrets on Streamlit Cloud. "
+        "Get a free key at https://console.groq.com/keys"
     )
     st.stop()
 
-client = Anthropic(api_key=api_key)
+client = Groq(api_key=api_key)
 
 
 # ---------------------------------------------------------------------
@@ -166,15 +167,17 @@ def ask_claude(question: str, context_chunks: list) -> str:
     user_message = f"Course material context:\n{context}\n\nQuestion: {question}"
 
     try:
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
             max_tokens=800,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
         )
-        return response.content[0].text
+        return response.choices[0].message.content
     except Exception as e:
-        st.error(f"Claude API error: {e}")
+        st.error(f"Groq API error: {e}")
         return ""
 
 
@@ -194,17 +197,19 @@ def generate_quiz(topic: str, context_chunks: list, num_questions=5) -> list:
     )
 
     try:
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
             max_tokens=1500,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
         )
     except Exception as e:
-        st.error(f"Claude API error: {e}")
+        st.error(f"Groq API error: {e}")
         return []
 
-    raw = response.content[0].text.strip()
+    raw = response.choices[0].message.content.strip()
     raw = re.sub(r"^```json|```$", "", raw, flags=re.MULTILINE).strip()
     try:
         return json.loads(raw)
